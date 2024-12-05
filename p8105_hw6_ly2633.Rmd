@@ -1,0 +1,211 @@
+---
+title: "p8105_hw6_ly2633"
+author: "Leila Yan"
+date: "2024-11-18"
+output: github_document
+---
+```{r}
+# Load libraries
+library(tidyverse)
+library(ggplot2)
+library(modelr)
+library(broom)
+library(purrr)
+```
+
+
+# Problem 2
+Create a city_state variable (e.g. “Baltimore, MD”), and a binary variable indicating whether the homicide is solved. Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. For this problem, limit your analysis those for whom victim_race is white or black. Be sure that victim_age is numeric.
+```{r}
+# load the data
+# create a city_state variable and a binary variable indicating whether the homicide is solved
+homicide_data = 
+  read.csv("homicide-data.csv") %>%
+  janitor::clean_names()
+
+
+homicide_data = homicide_data %>%
+  mutate(city_state = str_c(city,", ",state),
+         victim_age = as.numeric(victim_age),
+         homicide_status = ifelse(disposition == "Closed by arrest", 1, 0)) %>% 
+  filter(
+    !city_state %in% c("Dallas, TX","Phoenix, AZ", "Kansas City, MO","Tulsa, AL"),
+    victim_race %in% c("White", "Black")
+    ) 
+```
+
+
+
+For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
+```{r}
+# Use glm function to fit a logistic regression with resolved vs unresolved as the outcome sand victim age, sex and race as predictors
+baltimore = 
+  homicide_data %>%  
+  filter(city_state == "Baltimore, MD") 
+
+# Apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
+logistic_regression = 
+  glm(homicide_status ~ victim_age + victim_sex + victim_race, data = baltimore, family = binomial()) %>% 
+  broom::tidy(conf.int = TRUE, conf.level = 0.95)
+
+OR = logistic_regression %>%
+  mutate(
+    OR = exp(estimate),
+    confidence_interval_low = exp(conf.low),
+    confidence_interval_high = exp(conf.high)
+  ) %>% 
+  filter(term == "victim_sexMale") %>% 
+  select(OR, confidence_interval_low, confidence_interval_high, p.value) %>%  
+  knitr::kable(digits = 3)
+
+```
+
+
+Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
+```{r}
+glm_each_city <- homicide_data %>%
+  group_by(city_state) %>%
+  nest() 
+  
+glm_each_city = glm_each_city %>% 
+  mutate(
+    fit = map(data, ~ glm(homicide_status ~victim_age + victim_sex + victim_race, data = ., family = binomial())),
+    results = map(fit, ~ broom::tidy(.x, conf.int = TRUE, conf.level = 0.95) %>%
+      filter(term == "victim_sexMale") %>%
+        mutate(
+          OR = exp(estimate),
+          confidence_interval_low = exp(conf.low),
+          confidence_interval_high = exp(conf.high)
+        ) %>% 
+      select(OR, confidence_interval_low, confidence_interval_high, p.value))
+  ) %>%
+  unnest(results) %>% 
+  select(OR, confidence_interval_low, confidence_interval_high, p.value)
+
+glm_each_city  %>%
+  knitr::kable(digits = 3)
+```
+
+
+
+Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
+```{r}
+glm_each_city %>% 
+  ggplot(aes(x=reorder(city_state, OR), y = OR))+
+  geom_point()+
+  geom_errorbar(aes(ymin = confidence_interval_low, ymax = confidence_interval_high))+
+  labs(
+    title = "Estimated ORs and CIs", 
+    x = "each city", 
+    y = "odds ratios"
+  )+
+  theme_minimal()+
+  theme(axis.text.x=element_text(angle = 90, hjust =0.9))
+```
+
+
+
+
+
+# Problem 3
+Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
+
+```{r}
+birthweight_data = 
+  read_csv("birthweight.csv", show_col_types = FALSE) %>%
+  janitor::clean_names() %>%
+  mutate(
+    babysex = factor(babysex, levels = c(1, 2), labels = c("Male", "Female")),
+    malform = factor(malform, levels = c(0, 1), labels = c("Absent", "Present")),
+    mrace = factor(mrace, levels = c(1, 2, 3, 4, 8), 
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other")),
+    frace = factor(frace, levels = c(1, 2, 3, 4, 8, 9), 
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other", "Unknown"))
+  )
+
+# check for missing data
+sum(is.na(birthweight_data))
+```
+
+
+Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+
+```{r}
+# propose a regression model
+birthwt_model <- lm(
+  bwt ~  delwt + fincome + ppbmi + wtgain + frace + gaweeks + malform + bhead + blength + menarche + mheight + momage + mrace + pnumlbw + smoken, data = birthweight_data
+  )
+
+# plot residuals against fitted values 
+birthwt_plot <-
+  birthweight_data %>%
+  add_predictions(birthwt_model) %>%
+  add_residuals(birthwt_model) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5) + 
+  geom_point(size = 0.5, color = "blue") +
+  geom_smooth(method = "lm", color = "pink") + 
+    labs(title = "residuals vs. fitted values", 
+       x = "Predicted", 
+       y = "Residuals") + theme_minimal()
+
+```
+
+
+
+
+Compare your model to two others:
+
+One using length at birth and gestational age as predictors (main effects only)
+One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+
+```{r}
+# model comparison
+model_1 = lm(bwt ~ babysex + bhead + blength + delwt + gaweeks + mrace + parity + smoken, data = birthweight_data)
+model_2 = lm(bwt ~ blength + gaweeks, data = birthweight_data)
+model_3 = lm(bwt ~ bhead * blength * babysex, data = birthweight_data)
+
+cv_prediction = crossv_mc(birthweight_data, 100) %>%
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+  
+cv_prediction = cv_prediction %>%
+  mutate(
+    model_1  =  map(train, \(birthweight_data) lm(formula(model_1), data = birthweight_data)),
+    model_2 =  map(train, \(birthweight_data) lm(formula(model_2), data = birthweight_data)),
+    model_3 =  map(train, \(birthweight_data) lm(formula(model_3), data = birthweight_data))
+  ) |> 
+  mutate(
+    rmse_1 = map2_dbl(model_1 , test, rmse),
+    rmse_2 = map2_dbl(model_2, test, rmse),
+    rmse_3 = map2_dbl(model_3, test, rmse)
+  )
+
+
+cv_prediction %>%  
+  select(starts_with("rmse")) %>%  
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>%  
+  mutate(model = fct_inorder(model)) %>%  
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
