@@ -34,8 +34,6 @@ homicide_data = homicide_data %>%
     ) 
 ```
 
-
-
 For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
 ```{r}
 # Use glm function to fit a logistic regression with resolved vs unresolved as the outcome sand victim age, sex and race as predictors
@@ -69,7 +67,7 @@ glm_each_city <- homicide_data %>%
   
 glm_each_city = glm_each_city %>% 
   mutate(
-    fit = map(data, ~ glm(homicide_status ~victim_age + victim_sex + victim_race, data = ., family = binomial())),
+    fit = map(data, ~ glm(homicide_status ~ victim_age + victim_sex + victim_race, data = ., family = binomial())),
     results = map(fit, ~ broom::tidy(.x, conf.int = TRUE, conf.level = 0.95) %>%
       filter(term == "victim_sexMale") %>%
         mutate(
@@ -86,14 +84,12 @@ glm_each_city  %>%
   knitr::kable(digits = 3)
 ```
 
-
-
 Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
 ```{r}
 glm_each_city %>% 
   ggplot(aes(x=reorder(city_state, OR), y = OR))+
-  geom_point()+
-  geom_errorbar(aes(ymin = confidence_interval_low, ymax = confidence_interval_high))+
+  geom_point() +
+  geom_errorbar(aes(ymin = confidence_interval_low, ymax = confidence_interval_high)) +
   labs(
     title = "Estimated ORs and CIs", 
     x = "each city", 
@@ -102,10 +98,6 @@ glm_each_city %>%
   theme_minimal()+
   theme(axis.text.x=element_text(angle = 90, hjust =0.9))
 ```
-
-
-
-
 
 # Problem 3
 Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
@@ -152,10 +144,7 @@ birthwt_plot <-
 ```
 
 
-
-
 Compare your model to two others:
-
 One using length at birth and gestational age as predictors (main effects only)
 One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
 Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
